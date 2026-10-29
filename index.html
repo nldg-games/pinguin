@@ -13,7 +13,7 @@
 <script>
 (()=>{'use strict';
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d'),overlay=document.getElementById('overlay'),panel=document.getElementById('panel'),levelLabel=document.getElementById('level'),heartsLabel=document.getElementById('hearts'),timerLabel=document.getElementById('timer'),startBtn=document.getElementById('start');
-let W=900,H=600,dpr=1,state='title',level=0,last=0,worldX=0,player,obstacles=[],particles=[],speed=245,groundY=0,levelDistance=0,levelPassed=0,deadTimer=0,winTimer=0,hunterX=0,snowballX=0,snowballY=0,hearts=5,runTime=0,bestTime=loadBestTime(),newBest=false;
+let W=900,H=600,dpr=1,state='title',level=0,last=0,worldX=0,player,obstacles=[],particles=[],speed=245,groundY=0,levelDistance=0,levelPassed=0,deadTimer=0,winTimer=0,hunterX=0,snowballX=0,snowballY=0,hearts=5,runTime=0,bestTime=loadBestTime(),newBest=false,bossHits=0,bossShake=0,bossHitTimer=0,bossWalkTime=0,bossOrigin=0;
 const configs=[{speed:245,blocks:[[470,44,53],[690,47,61],[930,48,57],[1150,48,65],[1390,48,58],[1620,48,66]]},{speed:270,blocks:[[440,48,73],[660,50,82],[900,48,75],[1110,50,88],[1350,50,80],[1580,52,90]]},{speed:280,blocks:[[430,50,88],[665,50,94],[905,52,100],[1135,52,96],[1370,54,104],[1610,54,100]]}];
 function resize(){const r=document.getElementById('wrap').getBoundingClientRect();W=Math.max(320,r.width);H=Math.max(420,r.height);dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);groundY=H*.79;if(player){player.y=Math.min(player.y,groundY-player.h);if(player.grounded)player.y=groundY-player.h}if(obstacles.length)for(const o of obstacles)o.y=groundY-o.h}
 window.addEventListener('resize',resize);resize();
@@ -23,18 +23,19 @@ function updateTimer(){timerLabel.textContent=`TIME ${formatTime(runTime)}`;time
 function startNewRun(){runTime=0;newBest=false;updateTimer()}
 function updateHearts(){heartsLabel.innerHTML=Array.from({length:5},(_,i)=>`<span class="${i<hearts?'full':'empty'}">♥</span>`).join(' ');heartsLabel.setAttribute('aria-label',`${hearts} hearts remaining`);}
 function resetLevel(n,refill=true){level=n;if(refill)hearts=5;speed=configs[n].speed;worldX=0;levelPassed=0;obstacles=configs[n].blocks.map(([x,w,h])=>({x,y:groundY-h,w,h,hit:false}));player={x:W*.19,y:groundY-62,w:48,h:62,vy:0,grounded:true,anim:0};particles=[];levelLabel.textContent=`LEVEL ${level+1} / 3`;updateHearts();}
-function showScreen(title,desc,button,sub=''){panel.innerHTML=`<h1>${title}</h1><p>${desc}</p><button id="action">${button}</button>${sub?`<p id="sub">${sub}</p>`:''}`;overlay.classList.remove('hidden');document.getElementById('action').addEventListener('click',()=>{if(state==='title'||state==='dead'||state==='win'){const fullRestart=state==='win'||state==='title'||hearts<=0;if(fullRestart){resetLevel(0,true);startNewRun()}else resetLevel(level,false);state='playing';overlay.classList.add('hidden');last=performance.now();}})}
+function showScreen(title,desc,button,sub=''){const fightMode=state==='hunter';overlay.classList.toggle('fight-mode',fightMode);panel.innerHTML=`<h1>${title}</h1><p>${desc}</p><button id="action">${button}</button>${sub?`<p id="sub">${sub}</p>`:''}`;overlay.classList.remove('hidden');document.getElementById('action').addEventListener('click',()=>{if(state==='title'||state==='dead'||state==='win'){const fullRestart=state==='win'||state==='title'||hearts<=0;if(fullRestart){resetLevel(0,true);startNewRun()}else resetLevel(level,false);state='playing';overlay.classList.add('hidden');overlay.classList.remove('fight-mode');last=performance.now();}else if(state==='hunter'){overlay.classList.add('hidden');overlay.classList.remove('fight-mode');state='bossfight';last=performance.now();}})}
 function start(){resetLevel(0);startNewRun();state='playing';overlay.classList.add('hidden');last=performance.now()}
 startBtn.addEventListener('click',start);
 function jump(){if(state==='title'){start();return}if(state!=='playing'||!player.grounded)return;player.vy=-730;player.grounded=false;for(let i=0;i<5;i++)particles.push({x:player.x+20+Math.random()*15,y:groundY-3,vx:(Math.random()-.5)*90,vy:-Math.random()*90,life:.35});}
-window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)jump()}if(e.code==='Enter'&&state!=='playing'){if(state==='title')start();else{const fullRestart=state==='win'||hearts<=0;resetLevel(fullRestart?0:level,fullRestart);if(fullRestart)startNewRun();state='playing';overlay.classList.add('hidden')}}});canvas.addEventListener('pointerdown',e=>{e.preventDefault();jump()});
-function die(){if(state!=='playing')return;hearts=Math.max(0,hearts-1);updateHearts();state='dead';if(hearts>0){showScreen('OUCH!','You touched a zombie penguin! Level restarting. You have '+hearts+' '+(hearts===1?'heart':'hearts')+' left.','RETRY LEVEL','You lose one heart each time you touch a zombie penguin.');}else{showScreen('GAME OVER','You ran out of hearts! Let’s start the adventure again.','START AGAIN','You’ll get 5 new hearts at the beginning of Level 1.');}}
+window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)jump()}if(e.code==='Enter'&&state!=='playing'){if(state==='title')start();else{const fullRestart=state==='win'||hearts<=0;resetLevel(fullRestart?0:level,fullRestart);if(fullRestart)startNewRun();state='playing';overlay.classList.add('hidden')}}});canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(state==='bossfight')launchBossProjectile();else jump()});
+function launchBossProjectile(){if(state!=='bossfight')return;state='snowball';snowballX=player.x+player.w+4;snowballY=player.y+25;}
+function die(){if(state!=='playing')return;hearts=Math.max(0,hearts-1);updateHearts();state='dead';if(hearts>0){showScreen('OUCH!','You touched the ice! Level restarting. You have '+hearts+' '+(hearts===1?'heart':'hearts')+' left.','RETRY LEVEL','You lose one heart each time you touch the ice.');}else{showScreen('GAME OVER','You ran out of hearts! Let’s start the adventure again.','START AGAIN','You’ll get 5 new hearts at the beginning of Level 1.');}}
 function win(){state='win';newBest=bestTime===null||runTime<bestTime;if(newBest){bestTime=runTime;try{localStorage.setItem('pinguinBestTime',String(bestTime))}catch(e){}}const result=newBest?'NEW BEST TIME!':`Your time: ${formatTime(runTime)} · Best: ${formatTime(bestTime)}`;showScreen('YOU WIN!','<span class="win-line">You stopped the hunter!</span><span class="win-line">The Arctic is safe thanks to you.</span>','PLAY AGAIN',`<span class=\"win-line\">${result}</span><span class=\"win-line\">Can you beat your time next round?</span>`);}
-function update(dt){if(['playing','hunter','snowball','victory_anim'].includes(state)){runTime+=dt;updateTimer()}if(state==='hunter'){hunterX-=speed*dt;if(hunterX<W*.67){state='snowball';snowballX=player.x+player.w+4;snowballY=player.y+25}return}if(state==='snowball'){snowballX+=560*dt;const targetY=groundY-60;snowballY+=(targetY-snowballY)*Math.min(1,dt*3);if(snowballX>=hunterX-24){state='victory_anim';winTimer=1.15}return}if(state==='victory_anim'){winTimer-=dt;if(winTimer<=0)win();return}if(state!=='playing')return;player.anim+=dt;worldX+=speed*dt;levelPassed+=speed*dt;player.vy+=1750*dt;player.y+=player.vy*dt;if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.grounded=true;}else player.grounded=false;
+function update(dt){if(['playing','hunter','bossfight','snowball','victory_anim'].includes(state)){runTime+=dt;updateTimer()}if(bossHitTimer>0)bossHitTimer=Math.max(0,bossHitTimer-dt);if(bossShake>0)bossShake=Math.max(0,bossShake-dt*45);if(['bossfight','snowball'].includes(state)){bossWalkTime+=dt;hunterX=bossOrigin-Math.abs(Math.sin(bossWalkTime*1.35))*W*.13;}if(state==='hunter')return;if(state==='bossfight')return;if(state==='snowball'){snowballX+=560*dt;const targetY=groundY-60;snowballY+=(targetY-snowballY)*Math.min(1,dt*3);if(snowballX>=hunterX-24){bossHits++;bossShake=10;bossHitTimer=.42;if(bossHits>=3){state='victory_anim';winTimer=1.15}else{state='bossfight'}}return}if(state==='victory_anim'){winTimer-=dt;if(winTimer<=0)win();return}if(state!=='playing')return;player.anim+=dt;worldX+=speed*dt;levelPassed+=speed*dt;player.vy+=1750*dt;player.y+=player.vy*dt;if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.grounded=true;}else player.grounded=false;
 // Move each obstacle relative to the scrolling world. Obstacles are lethal, not platforms.
 for(const o of obstacles){const sx=o.x-worldX+W*.19;if(sx+o.w<0||sx>W+10)continue;const px=player.x+9,pr=player.x+player.w-8,py=player.y+7,pb=player.y+player.h-2;if(pr>sx+3&&px<sx+o.w-3&&pb>o.y+2&&py<groundY-1){die();return}}
 particles=particles.filter(p=>p.life>0);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=220*dt}
-const lastBlock=obstacles[obstacles.length-1],endX=lastBlock.x+lastBlock.w+280;if(worldX>endX){if(level<2){resetLevel(level+1,true)}else{state='hunter';hunterX=W+90;}}
+const lastBlock=obstacles[obstacles.length-1],endX=lastBlock.x+lastBlock.w+280;if(worldX>endX){if(level<2){resetLevel(level+1,true)}else{state='hunter';hunterX=W*.78;bossOrigin=hunterX;bossWalkTime=0;bossHitTimer=0;bossHits=0;showScreen('FINAL FIGHT!','The hunter is blocking your path! Throw snowballs to stop him.','FIGHT!','Tap anywhere on the screen to throw a snowball. Three hits to win!');last=performance.now();}}
 }
 function rounded(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
 function drawBackground(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#9ee2ff');g.addColorStop(1,'#e6f9ff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
@@ -54,14 +55,49 @@ ctx.fillStyle='#234e69';ctx.beginPath();ctx.ellipse(-20,8,6,17,.2,0,Math.PI*2);c
 ctx.fillStyle='#ff982e';ctx.beginPath();ctx.ellipse(-11,29,10,5,.12,0,Math.PI*2);ctx.ellipse(10,29,10,5,-.12,0,Math.PI*2);ctx.fill();
 // face
 ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-7,-13,6,0,Math.PI*2);ctx.arc(8,-13,6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#142f43';ctx.beginPath();ctx.arc(-6,-12,2.5,0,Math.PI*2);ctx.arc(9,-12,2.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ff9a2e';ctx.beginPath();ctx.moveTo(-3,-4);ctx.lineTo(10,-2);ctx.lineTo(-2,3);ctx.closePath();ctx.fill();ctx.restore();}
-function drawHunter(){const x=state==='hunter'||state==='snowball'||state==='victory_anim'?hunterX:W+100,y=groundY-91;ctx.save();ctx.translate(x,y);if(state==='victory_anim'){ctx.rotate(-.9*(1-Math.max(0,winTimer)/1.15));ctx.translate(45,10)}// legs
-ctx.strokeStyle='#30485d';ctx.lineWidth=9;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-5,56);ctx.lineTo(-13,82);ctx.moveTo(11,56);ctx.lineTo(22,80);ctx.stroke();rounded(-20,79,17,7,3,'#293b4d');rounded(14,78,18,7,3,'#293b4d');
-// coat/body
-rounded(-21,24,43,39,10,'#466f83');ctx.fillStyle='#f4f0db';ctx.beginPath();ctx.moveTo(-7,27);ctx.lineTo(3,27);ctx.lineTo(0,57);ctx.closePath();ctx.fill();ctx.fillStyle='#d3a57b';ctx.beginPath();ctx.arc(0,9,20,0,Math.PI*2);ctx.fill();ctx.fillStyle='#4a3b32';ctx.beginPath();ctx.arc(0,3,21,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(-19,2,38,6);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-7,10,4,0,Math.PI*2);ctx.arc(7,10,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#273746';ctx.beginPath();ctx.arc(-6,10,2,0,Math.PI*2);ctx.arc(8,10,2,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#6d4033';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-5,20);ctx.quadraticCurveTo(0,15,6,20);ctx.stroke();
-// silly trap
-ctx.strokeStyle='#6b7c87';ctx.lineWidth=4;ctx.beginPath();ctx.arc(36,72,14,Math.PI,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.moveTo(22,72);ctx.lineTo(50,72);ctx.stroke();ctx.restore();if(state==='victory_anim'){ctx.fillStyle='#ff7b29';ctx.font='900 30px system-ui';ctx.textAlign='center';ctx.fillText('WHACK!',W*.59,H*.37)}}
+function drawHunter(){
+const x=['hunter','bossfight','snowball','victory_anim'].includes(state)?hunterX:W+100,y=groundY-101;
+ctx.save();if(bossHitTimer>0 && Math.floor(bossHitTimer*24)%2===0)ctx.globalAlpha=.22; if(bossShake){ctx.translate((Math.random()-.5)*bossShake,(Math.random()-.5)*bossShake)}ctx.translate(x,y);
+if(state==='victory_anim'){ctx.rotate(-.9*(1-Math.max(0,winTimer)/1.15));ctx.translate(40,12)}
+// Boots and legs
+ctx.lineCap='round';ctx.strokeStyle='#4a403b';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(-9,65);ctx.lineTo(-14,86);ctx.moveTo(10,65);ctx.lineTo(20,85);ctx.stroke();
+rounded(-25,82,20,10,4,'#342f30','#24262a');rounded(12,81,23,11,4,'#342f30','#24262a');
+// Heavy arctic trousers
+rounded(-17,48,34,22,7,'#554b49','#393637');
+// Oversized grey-white fur coat with dark seams
+rounded(-29,20,58,42,13,'#c8cbd0','#737b84');
+// fluffy front trim
+ctx.strokeStyle='#f5f1e8';ctx.lineWidth=8;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-24,25);ctx.lineTo(-25,51);ctx.moveTo(24,25);ctx.lineTo(25,51);ctx.moveTo(-20,59);ctx.lineTo(20,59);ctx.stroke();
+// coat panels and belt
+ctx.strokeStyle='#8d969f';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,27);ctx.lineTo(0,53);ctx.stroke();
+rounded(-23,43,46,6,3,'#76533b');rounded(-4,42,9,8,2,'#d7c39a','#5d493c');
+// mittens
+ctx.fillStyle='#373a40';ctx.beginPath();ctx.ellipse(-32,49,9,8,-.3,0,Math.PI*2);ctx.ellipse(32,49,9,8,.3,0,Math.PI*2);ctx.fill();
+// neck scarf
+ctx.fillStyle='#414750';ctx.beginPath();ctx.moveTo(-14,16);ctx.lineTo(14,16);ctx.lineTo(11,28);ctx.lineTo(-10,28);ctx.closePath();ctx.fill();
+// head, warm cheeks, nose and face
+ctx.fillStyle='#e6ad83';ctx.beginPath();ctx.ellipse(0,8,18,19,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#f4c39b';ctx.beginPath();ctx.ellipse(-10,13,5,4,0,0,Math.PI*2);ctx.ellipse(10,13,5,4,0,0,Math.PI*2);ctx.fill();
+// eyebrows and eyes
+ctx.strokeStyle='#342b2a';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-13,1);ctx.lineTo(-4,4);ctx.moveTo(4,4);ctx.lineTo(14,0);ctx.stroke();
+ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(-8,7,5,6,0,0,Math.PI*2);ctx.ellipse(8,7,5,6,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#263440';ctx.beginPath();ctx.arc(-7,8,2.4,0,Math.PI*2);ctx.arc(9,8,2.4,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#e88468';ctx.beginPath();ctx.ellipse(1,13,5,4,0,0,Math.PI*2);ctx.fill();
+ctx.strokeStyle='#70453b';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(-6,20);ctx.quadraticCurveTo(1,24,8,18);ctx.stroke();
+// Dark winter trapper hat with plush pale fur band and ear flaps
+ctx.fillStyle='#41444a';ctx.beginPath();ctx.ellipse(0,-5,24,15,0,Math.PI,Math.PI*2);ctx.fill();
+rounded(-23,-7,46,9,5,'#353941');
+ctx.strokeStyle='#f4f0e8';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-20,-6);ctx.quadraticCurveTo(0,-1,20,-6);ctx.stroke();
+ctx.fillStyle='#d9d8d3';ctx.beginPath();ctx.ellipse(-20,5,7,14,-.1,0,Math.PI*2);ctx.ellipse(20,5,7,14,.1,0,Math.PI*2);ctx.fill();
+// simple fur texture dots
+ctx.fillStyle='#fffaf0';for(const [fx,fy] of [[-16,-5],[-7,-2],[4,-3],[13,-5],[-20,3],[20,3]]){ctx.beginPath();ctx.arc(fx,fy,1.8,0,Math.PI*2);ctx.fill();}
+// Bow and quiver silhouette behind him
+ctx.strokeStyle='#795137';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(31,19);ctx.quadraticCurveTo(48,36,32,56);ctx.stroke();ctx.strokeStyle='#e7d7b9';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(31,19);ctx.lineTo(32,56);ctx.stroke();
+rounded(25,25,9,25,3,'#755039');ctx.strokeStyle='#d9d4c9';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(27,26);ctx.lineTo(24,17);ctx.moveTo(31,26);ctx.lineTo(33,16);ctx.moveTo(35,27);ctx.lineTo(39,19);ctx.stroke();
+ctx.restore();
+if(state==='victory_anim'){ctx.fillStyle='#ff7b29';ctx.font='900 30px system-ui';ctx.textAlign='center';ctx.fillText('WHACK!',W*.59,H*.37)}
+}
 function drawSnowball(){if(state!=='snowball')return;ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#8ccfe8';ctx.lineWidth=3;ctx.beginPath();ctx.arc(snowballX,snowballY,11,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#dff7ff';ctx.beginPath();ctx.arc(snowballX-3,snowballY-4,3,0,Math.PI*2);ctx.fill();ctx.restore()}
-function draw(){drawBackground();for(const o of obstacles)drawIce(o);if(player)drawPenguin();for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.35);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}drawSnowball();if(state==='hunter'||state==='snowball'||state==='victory_anim')drawHunter();if(state==='playing'){ctx.fillStyle='#17425b';ctx.font='700 13px system-ui';ctx.textAlign='right';ctx.fillText('KEEP HOPPING!',W-18,H-20)}}
+function draw(){drawBackground();for(const o of obstacles)drawIce(o);if(player)drawPenguin();for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.35);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}drawSnowball();if(state==='hunter'||state==='bossfight'||state==='snowball'||state==='victory_anim')drawHunter();if(['hunter','bossfight','snowball'].includes(state)){ctx.fillStyle='#17425b';ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText('HUNTER HEALTH: '+(3-bossHits)+' / 3',W*.72,38);}if(state==='playing'){ctx.fillStyle='#17425b';ctx.font='700 13px system-ui';ctx.textAlign='right';ctx.fillText('KEEP HOPPING!',W-18,H-20)}}
 function loop(t){const dt=Math.min(.032,Math.max(0,(t-last)/1000||0));last=t;update(dt);draw();requestAnimationFrame(loop)}
 // Initial art behind title screen
 resetLevel(0,true);requestAnimationFrame(loop);
