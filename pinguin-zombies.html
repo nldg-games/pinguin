@@ -13,7 +13,8 @@
 <script>
 (()=>{'use strict';
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d'),overlay=document.getElementById('overlay'),panel=document.getElementById('panel'),levelLabel=document.getElementById('level'),heartsLabel=document.getElementById('hearts'),timerLabel=document.getElementById('timer'),startBtn=document.getElementById('start');
-let W=900,H=600,dpr=1,state='title',level=0,last=0,worldX=0,player,obstacles=[],particles=[],speed=245,groundY=0,levelDistance=0,levelPassed=0,deadTimer=0,winTimer=0,hunterX=0,snowballX=0,snowballY=0,hearts=5,runTime=0,bestTime=loadBestTime(),newBest=false,bossHit=false,bossShake=0,bossHits=0,bossHitTimer=0,bossWalkTime=0,bossOrigin=0;
+let W=900,H=600,dpr=1,state='title',level=0,last=0,worldX=0,player,obstacles=[],particles=[],speed=245,groundY=0,levelDistance=0,levelPassed=0,deadTimer=0,winTimer=0,hunterX=0,snowballX=0,snowballY=0,hearts=5,runTime=0,bestTime=loadBestTime(),newBest=false,bossHit=false,bossShake=0,bossHits=0,bossHitTimer=0,bossWalkTime=0,bossOrigin=0,shots=[],tt=0,burstT=0,burstMax=.7,burstX=0,burstY=0;
+const BURST_WORD='SHMACK!!!',BURST_RISE=255;
 const configs=[{speed:245,blocks:[[470,46,58],[690,48,64],[930,48,60],[1150,50,68],[1390,48,62],[1620,50,70]]},{speed:270,blocks:[[440,48,78],[660,50,86],[900,50,80],[1110,52,92],[1350,52,86],[1580,54,96]]},{speed:280,blocks:[[430,52,92],[665,52,98],[905,54,104],[1135,54,100],[1370,56,108],[1610,56,104]]}];
 function resize(){const r=document.getElementById('wrap').getBoundingClientRect();W=Math.max(320,r.width);H=Math.max(420,r.height);dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);groundY=H*.79;if(player){player.y=Math.min(player.y,groundY-player.h);if(player.grounded)player.y=groundY-player.h}if(obstacles.length)for(const o of obstacles)o.y=groundY-o.h}
 window.addEventListener('resize',resize);resize();
@@ -22,21 +23,25 @@ function formatTime(seconds){const minutes=Math.floor(seconds/60),secs=Math.floo
 function updateTimer(){timerLabel.textContent=`TIME ${formatTime(runTime)}`;timerLabel.setAttribute('aria-label',`Elapsed time ${formatTime(runTime)}`)}
 function startNewRun(){runTime=0;newBest=false;updateTimer()}
 function updateHearts(){heartsLabel.innerHTML=Array.from({length:5},(_,i)=>`<span class="${i<hearts?'full':'empty'}">♥</span>`).join(' ');heartsLabel.setAttribute('aria-label',`${hearts} hearts remaining`);}
-function resetLevel(n,refill=true){level=n;if(refill)hearts=5;speed=configs[n].speed;worldX=0;levelPassed=0;obstacles=configs[n].blocks.map(([x,w,h])=>({x,y:groundY-h,w,h,hit:false}));player={x:W*.19,y:groundY-62,w:48,h:62,vy:0,grounded:true,anim:0};particles=[];levelLabel.textContent=`ICE CAVERN • LEVEL ${level+1} / 3`;updateHearts();}
-function showScreen(title,desc,button,sub=''){const fightMode=state==='hunter';overlay.classList.toggle('fight-mode',fightMode);panel.innerHTML=`<h1>${title}</h1><p>${desc}</p><button id="action">${button}</button>${sub?`<p id="sub">${sub}</p>`:''}`;overlay.classList.remove('hidden');document.getElementById('action').addEventListener('click',()=>{if(state==='title'||state==='dead'||state==='win'){const fullRestart=state==='win'||state==='title'||hearts<=0;if(fullRestart){resetLevel(0,true);startNewRun()}else resetLevel(level,false);state='playing';overlay.classList.add('hidden');overlay.classList.remove('fight-mode');last=performance.now();}else if(state==='hunter'){overlay.classList.add('hidden');overlay.classList.remove('fight-mode');state='bossfight';last=performance.now();}})}
+function resetLevel(n,refill=true){level=n;if(refill)hearts=5;speed=configs[n].speed;worldX=0;levelPassed=0;obstacles=configs[n].blocks.map(([x,w,h])=>({x,y:groundY-h,w,h,hit:false}));player={x:W*.19,y:groundY-62,w:48,h:62,vy:0,grounded:true,anim:0};particles=[];shots=[];levelLabel.textContent=`ICE CAVERN • LEVEL ${level+1} / 3`;updateHearts();}
+function showScreen(title,desc,button,sub=''){const fightMode=false;overlay.classList.toggle('fight-mode',fightMode);panel.innerHTML=`<h1>${title}</h1><p>${desc}</p><button id="action">${button}</button>${sub?`<p id="sub">${sub}</p>`:''}`;overlay.classList.remove('hidden');document.getElementById('action').addEventListener('click',()=>{if(state==='title'||state==='dead'||state==='win'){const fullRestart=state==='win'||state==='title'||hearts<=0;if(fullRestart){resetLevel(0,true);startNewRun()}else resetLevel(level,false);state='playing';overlay.classList.add('hidden');overlay.classList.remove('fight-mode');last=performance.now();}else if(state==='hunter'){overlay.classList.add('hidden');overlay.classList.remove('fight-mode');state='bossfight';last=performance.now();}})}
 function start(){resetLevel(0);startNewRun();state='playing';overlay.classList.add('hidden');last=performance.now()}
 startBtn.addEventListener('click',start);
-function launchIceBlock(){if(state!=='bossfight')return;state='snowball';snowballX=player.x+player.w+4;snowballY=player.y+25;last=performance.now()}
+function launchIceBlock(){if(state!=='bossfight')return;shots.push({x:player.x+player.w+4,y:player.y+25});last=performance.now()}
 function jump(){if(state==='title'){start();return}if(state==='hunter'||state==='bossfight')return;if(state!=='playing'||!player.grounded)return;player.vy=-730;player.grounded=false;for(let i=0;i<5;i++)particles.push({x:player.x+20+Math.random()*15,y:groundY-3,vx:(Math.random()-.5)*90,vy:-Math.random()*90,life:.35});}
-window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)jump()}if(e.code==='Enter'&&state!=='playing'){if(state==='title')start();else{const fullRestart=state==='win'||hearts<=0;resetLevel(fullRestart?0:level,fullRestart);if(fullRestart)startNewRun();state='playing';overlay.classList.add('hidden')}}});canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(state==='bossfight')launchIceBlock();else jump()});
+window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)jump()}if(e.code==='Enter'&&!overlay.classList.contains('hidden')){e.preventDefault();(document.getElementById('action')||document.getElementById('start'))?.click()}});canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(state==='bossfight')launchIceBlock();else jump()});
 function die(){if(state!=='playing')return;hearts=Math.max(0,hearts-1);updateHearts();state='dead';if(hearts>0){showScreen('OUCH!','You touched a zombie penguin! Level restarting. You have '+hearts+' '+(hearts===1?'heart':'hearts')+' left.','RETRY LEVEL','You lose one heart each time you touch a zombie penguin.');}else{showScreen('GAME OVER','You ran out of hearts! Let’s start the adventure again.','START AGAIN','You’ll get 5 new hearts at the beginning of Level 1.');}}
 function win(){state='win';newBest=bestTime===null||runTime<bestTime;if(newBest){bestTime=runTime;try{localStorage.setItem('pinguinBestTime',String(bestTime))}catch(e){}}const result=newBest?'NEW BEST TIME!':`Your time: ${formatTime(runTime)} · Best: ${formatTime(bestTime)}`;showScreen('YOU WIN!','<span class="win-line">You defeated the King Penguin Zombie!</span><span class="win-line">The Ice Cavern is safe!</span>','PLAY AGAIN',`<span class=\"win-line\">${result}</span><span class=\"win-line\">Can you beat your time next round?</span>`);}
-function update(dt){if(['playing','hunter','bossfight','snowball','victory_anim'].includes(state)){runTime+=dt;updateTimer()}if(bossHitTimer>0)bossHitTimer=Math.max(0,bossHitTimer-dt);if(bossShake>0)bossShake=Math.max(0,bossShake-dt*45);if(['bossfight','snowball'].includes(state)){bossWalkTime+=dt;hunterX=bossOrigin-Math.abs(Math.sin(bossWalkTime*1.2))*W*.13;}if(state==='hunter'){return}if(state==='bossfight'){return}if(state==='snowball'){snowballX+=560*dt;const targetY=groundY-80;snowballY+=(targetY-snowballY)*Math.min(1,dt*3);if(snowballX>=hunterX-38){bossHits++;bossShake=12;bossHitTimer=.48;if(bossHits>=3){state='victory_anim';winTimer=1.15}else{state='bossfight'}}return}if(state==='victory_anim'){winTimer-=dt;if(winTimer<=0)win();return}if(state!=='playing')return;player.anim+=dt;worldX+=speed*dt;levelPassed+=speed*dt;player.vy+=1750*dt;player.y+=player.vy*dt;if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.grounded=true;}else player.grounded=false;
+function update(dt){burstT=Math.max(0,burstT-dt);if(['playing','hunter','bossfight','snowball','victory_anim'].includes(state)){runTime+=dt;updateTimer()}if(bossHitTimer>0)bossHitTimer=Math.max(0,bossHitTimer-dt);if(bossShake>0)bossShake=Math.max(0,bossShake-dt*45);if(['bossfight','snowball'].includes(state)){bossWalkTime+=dt;hunterX=bossOrigin-Math.abs(Math.sin(bossWalkTime*1.2))*W*.13;}if(state==='hunter'){return}if(state==='bossfight'){for(const sh of shots){sh.x+=560*dt;sh.y+=(groundY-80-sh.y)*Math.min(1,dt*3);if(!sh.hit&&sh.x>=hunterX-38){sh.hit=true;bossHits++;bossShake=12;bossHitTimer=.48;burstX=hunterX-75;burstY=Math.max(125,groundY-BURST_RISE);burstMax=bossHits>=3?1.15:.7;burstT=burstMax;if(bossHits>=3){state='victory_anim';winTimer=1.15;shots=[];break}}}shots=shots.filter(sh=>!sh.hit&&sh.x<W+40);return}if(state==='victory_anim'){winTimer-=dt;if(winTimer<=0)win();return}if(state!=='playing')return;player.anim+=dt;worldX+=speed*dt;levelPassed+=speed*dt;player.vy+=1750*dt;player.y+=player.vy*dt;if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.grounded=true;}else player.grounded=false;
 // Move each obstacle relative to the scrolling world. Obstacles are lethal, not platforms.
 for(const o of obstacles){const sx=o.x-worldX+W*.19;if(sx+o.w<0||sx>W+10)continue;const px=player.x+9,pr=player.x+player.w-8,py=player.y+7,pb=player.y+player.h-2;if(pr>sx+3&&px<sx+o.w-3&&pb>o.y+2&&py<groundY-1){die();return}}
 particles=particles.filter(p=>p.life>0);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=220*dt}
 const lastBlock=obstacles[obstacles.length-1],endX=lastBlock.x+lastBlock.w+280;if(worldX>endX){if(level<2){resetLevel(level+1,true)}else{state='hunter';hunterX=W*.79;bossOrigin=hunterX;bossWalkTime=0;bossHitTimer=0;bossHits=0;showScreen('KING PENGUIN ZOMBIE!','The Zombie King is blocking the cavern! Defeat him with ice blocks.','FIGHT!','Tap anywhere on the screen to throw an ice block. Three hits to win!');last=performance.now();}}
 }
+// Big comic-book impact burst shown for a moment after each hit.
+function drawBurst(){if(burstT<=0)return;const k=burstT/burstMax,age=burstMax-burstT,pop=1+Math.max(0,.18-age)*3,s=Math.min(1,W/520)*pop;const bs=Math.min(1,W/520);ctx.save();ctx.translate(Math.max(125*bs,Math.min(W-125*bs,burstX)),burstY);ctx.rotate(-.12);ctx.scale(s,s);ctx.globalAlpha=Math.min(1,k*4);
+ctx.beginPath();for(let i=0;i<28;i++){const a=i/28*Math.PI*2,r=i%2?62:98;ctx.lineTo(Math.cos(a)*r*1.35,Math.sin(a)*r*.85)}ctx.closePath();ctx.fillStyle='#ffe23b';ctx.fill();ctx.strokeStyle='#d0261c';ctx.lineWidth=7;ctx.stroke();
+ctx.font=(BURST_WORD.length>8?'900 36px':'900 42px')+' Impact, "Arial Black", system-ui';ctx.textAlign='center';ctx.textBaseline='middle';const fit=Math.min(1,150/ctx.measureText(BURST_WORD).width);ctx.scale(fit,fit);ctx.lineWidth=9;ctx.strokeStyle='#1b1020';ctx.strokeText(BURST_WORD,0,2);ctx.fillStyle='#ff3b2f';ctx.fillText(BURST_WORD,0,2);ctx.restore();ctx.globalAlpha=1;ctx.textBaseline='alphabetic'}
 function rounded(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
 function drawBackground(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#071421');g.addColorStop(1,'#17384a');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
 // Ice cavern ceiling and walls
@@ -48,23 +53,6 @@ for(let i=0;i<12;i++){let x=((i*117-worldX*.18)%(W+140)+W+140)%(W+140)-70;let h=
 for(let i=0;i<9;i++){let x=((i*173-worldX*.25)%(W+180)+W+180)%(W+180)-90;let y=groundY-55-(i%3)*25;ctx.fillStyle='#65bfd7';ctx.beginPath();ctx.moveTo(x,y+45);ctx.lineTo(x+12,y);ctx.lineTo(x+25,y+45);ctx.closePath();ctx.fill();}
 // icy ground
 ctx.fillStyle='#dff8ff';ctx.fillRect(0,groundY,W,H-groundY);ctx.fillStyle='#b9e9f4';ctx.fillRect(0,groundY+9,W,6);ctx.strokeStyle='#8ecddd';ctx.lineWidth=2;ctx.beginPath();for(let x=0;x<W;x+=50){let xx=(x-worldX*.6%50+50)%W;ctx.moveTo(xx,groundY+25);ctx.lineTo(xx+17,groundY+25)}ctx.stroke();}
-function drawZombie(o){const x=o.x-worldX+W*.19;if(x+o.w<-5||x>W+5)return;const y=groundY-o.h;ctx.save();ctx.translate(x+o.w/2,y+o.h/2);ctx.shadowColor='#020814';ctx.shadowBlur=10;ctx.shadowOffsetY=5;
-// Regular zombie penguin: same green/red visual style as the king, without crown or royal cape
-ctx.fillStyle='#123d2b';ctx.beginPath();ctx.ellipse(0,7,24,31,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-// lime belly and darker side flippers
-ctx.fillStyle='#a8e84a';ctx.beginPath();ctx.ellipse(1,13,15,21,0,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='#0b2d24';ctx.beginPath();ctx.ellipse(-21,11,7,18,.2,0,Math.PI*2);ctx.ellipse(21,11,7,18,-.2,0,Math.PI*2);ctx.fill();
-// ragged dark-green head ridge, keeping the regular enemy silhouette
-ctx.fillStyle='#1b5938';ctx.beginPath();ctx.arc(0,-13,21,Math.PI,0);ctx.lineTo(20,-5);ctx.lineTo(13,-1);ctx.lineTo(7,-7);ctx.lineTo(1,-1);ctx.lineTo(-6,-7);ctx.lineTo(-13,-1);ctx.lineTo(-20,-6);ctx.closePath();ctx.fill();
-ctx.strokeStyle='#69b936';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-17,-7);ctx.lineTo(-11,-13);ctx.moveTo(17,-7);ctx.lineTo(11,-13);ctx.stroke();
-// glowing red eyes
-ctx.fillStyle='#ff443d';ctx.shadowColor='#ff2929';ctx.shadowBlur=8;ctx.beginPath();ctx.ellipse(-7,-13,7,5,0,0,Math.PI*2);ctx.ellipse(8,-13,7,5,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-ctx.fillStyle='#4b0710';ctx.beginPath();ctx.arc(-6,-13,2.2,0,Math.PI*2);ctx.arc(9,-13,2.2,0,Math.PI*2);ctx.fill();
-// orange beak and angry stitched mouth
-ctx.fillStyle='#e9872b';ctx.beginPath();ctx.moveTo(-4,-3);ctx.lineTo(11,-1);ctx.lineTo(-3,5);ctx.closePath();ctx.fill();ctx.strokeStyle='#071b14';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-10,10);ctx.lineTo(10,10);ctx.moveTo(-6,8);ctx.lineTo(-6,13);ctx.moveTo(0,8);ctx.lineTo(0,13);ctx.moveTo(6,8);ctx.lineTo(6,13);ctx.stroke();
-// subtle red vein lines on the head and flippers
-ctx.strokeStyle='#e34b43';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-17,-22);ctx.lineTo(-12,-18);ctx.lineTo(-14,-14);ctx.moveTo(15,-23);ctx.lineTo(11,-19);ctx.lineTo(13,-16);ctx.moveTo(-21,7);ctx.lineTo(-15,11);ctx.lineTo(-17,16);ctx.moveTo(20,8);ctx.lineTo(14,12);ctx.lineTo(16,17);ctx.stroke();
-ctx.fillStyle='#e9872b';ctx.beginPath();ctx.ellipse(-11,30,10,5,.12,0,Math.PI*2);ctx.ellipse(10,30,10,5,-.12,0,Math.PI*2);ctx.fill();ctx.restore();}
 function drawPenguin(){const p=player,x=p.x,y=p.y,w=p.w,h=p.h;ctx.save();ctx.translate(x+w/2,y+h/2);if(!p.grounded)ctx.rotate(-.08); // shadow
 ctx.fillStyle='#6db8d0a0';ctx.beginPath();ctx.ellipse(0,h/2+7,25,5,0,0,Math.PI*2);ctx.fill();
 // body
@@ -75,22 +63,66 @@ ctx.fillStyle='#234e69';ctx.beginPath();ctx.ellipse(-20,8,6,17,.2,0,Math.PI*2);c
 ctx.fillStyle='#ff982e';ctx.beginPath();ctx.ellipse(-11,29,10,5,.12,0,Math.PI*2);ctx.ellipse(10,29,10,5,-.12,0,Math.PI*2);ctx.fill();
 // face
 ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-7,-13,6,0,Math.PI*2);ctx.arc(8,-13,6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#142f43';ctx.beginPath();ctx.arc(-6,-12,2.5,0,Math.PI*2);ctx.arc(9,-12,2.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ff9a2e';ctx.beginPath();ctx.moveTo(-3,-4);ctx.lineTo(10,-2);ctx.lineTo(-2,3);ctx.closePath();ctx.fill();ctx.restore();}
-function drawHunter(){const x=['hunter','bossfight','snowball','victory_anim'].includes(state)?hunterX:W+120,y=groundY-145;ctx.save();if(bossHitTimer>0 && Math.floor(bossHitTimer*24)%2===0)ctx.globalAlpha=.22;if(bossShake){ctx.translate((Math.random()-.5)*bossShake,(Math.random()-.5)*bossShake)}ctx.translate(x,y);if(state==='victory_anim'){ctx.rotate(-.9*(1-Math.max(0,winTimer)/1.15));ctx.translate(55,18)}
-// giant King Penguin Zombie
-ctx.fillStyle='#123d2b';ctx.beginPath();ctx.ellipse(0,72,48,70,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#a8e84a';ctx.beginPath();ctx.ellipse(2,86,31,47,0,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='#0b2d24';ctx.beginPath();ctx.ellipse(-43,79,13,37,.15,0,Math.PI*2);ctx.ellipse(43,79,13,37,-.15,0,Math.PI*2);ctx.fill();
-// ragged royal cape
-ctx.fillStyle='#092a21';ctx.beginPath();ctx.moveTo(-39,44);ctx.lineTo(-55,132);ctx.lineTo(-38,124);ctx.lineTo(-25,139);ctx.lineTo(-10,126);ctx.lineTo(2,142);ctx.lineTo(17,126);ctx.lineTo(38,137);ctx.lineTo(54,128);ctx.lineTo(39,44);ctx.closePath();ctx.fill();ctx.strokeStyle='#8acb42';ctx.lineWidth=3;ctx.stroke();
-// crown
-ctx.fillStyle='#f3c84b';ctx.beginPath();ctx.moveTo(-33,10);ctx.lineTo(-23,-20);ctx.lineTo(-5,0);ctx.lineTo(8,-24);ctx.lineTo(20,1);ctx.lineTo(34,-13);ctx.lineTo(32,18);ctx.closePath();ctx.fill();ctx.strokeStyle='#c99a24';ctx.lineWidth=3;ctx.stroke();
-ctx.fillStyle='#ff443d';ctx.shadowColor='#ff2929';ctx.shadowBlur=12;ctx.beginPath();ctx.arc(-14,32,12,0,Math.PI*2);ctx.arc(15,32,12,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#4b0710';ctx.beginPath();ctx.arc(-12,32,3,0,Math.PI*2);ctx.arc(17,32,3,0,Math.PI*2);ctx.fill();
-ctx.strokeStyle='#e34b43';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-36,42);ctx.lineTo(-27,48);ctx.lineTo(-31,57);ctx.moveTo(34,39);ctx.lineTo(27,47);ctx.lineTo(30,55);ctx.moveTo(-25,70);ctx.lineTo(-17,77);ctx.lineTo(-20,85);ctx.moveTo(29,72);ctx.lineTo(21,79);ctx.lineTo(24,87);ctx.stroke();
-ctx.fillStyle='#ff9b30';ctx.beginPath();ctx.moveTo(-9,51);ctx.lineTo(17,55);ctx.lineTo(-8,65);ctx.closePath();ctx.fill();
-ctx.fillStyle='#ff9b30';ctx.beginPath();ctx.ellipse(-24,139,20,8,.08,0,Math.PI*2);ctx.ellipse(24,139,20,8,-.08,0,Math.PI*2);ctx.fill();ctx.restore();
-if(state==='victory_anim'){ctx.fillStyle='#ffdf4d';ctx.font='900 42px system-ui';ctx.textAlign='center';ctx.strokeStyle='#172b36';ctx.lineWidth=5;ctx.strokeText('SHMACK!',W*.58,H*.32);ctx.fillText('SHMACK!',W*.58,H*.32)}}
-function drawSnowball(){if(state!=='snowball')return;ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#8ccfe8';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(snowballX-13,snowballY-13,26,26,5);ctx.fill();ctx.stroke();ctx.fillStyle='#dff7ff';ctx.beginPath();ctx.moveTo(snowballX-8,snowballY-6);ctx.lineTo(snowballX-2,snowballY-11);ctx.lineTo(snowballX+6,snowballY-5);ctx.lineTo(snowballX+9,snowballY+2);ctx.lineTo(snowballX+1,snowballY+8);ctx.lineTo(snowballX-7,snowballY+4);ctx.closePath();ctx.fill();ctx.restore()}
-function draw(){drawBackground();for(const o of obstacles)drawZombie(o);if(player)drawPenguin();for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.35);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}drawSnowball();if(state==='hunter'||state==='bossfight'||state==='snowball'||state==='victory_anim')drawHunter();if(['hunter','bossfight','snowball'].includes(state)){ctx.fillStyle='#e9fbff';ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText('KING HEALTH: '+(3-bossHits)+' / 3',W*.72,38);}if(state==='playing'){ctx.fillStyle='#17425b';ctx.font='700 13px system-ui';ctx.textAlign='right';ctx.fillText(level===2?'THE KING IS NEAR!':'KEEP HOPPING!',W-18,H-20)}}
-function loop(t){const dt=Math.min(.032,Math.max(0,(t-last)/1000||0));last=t;update(dt);draw();requestAnimationFrame(loop)}
+// Light red veins: thin branching lines.
+function veins(list,w){ctx.save();ctx.strokeStyle='#ff8a7a';ctx.globalAlpha=.75;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();for(const v of list){ctx.moveTo(v[0],v[1]);for(let i=2;i<v.length;i+=2)ctx.lineTo(v[i],v[i+1])}ctx.stroke();ctx.restore()}
+function stitches(x1,y1,x2,y2,n,len){ctx.strokeStyle='#0d2414';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);const dx=x2-x1,dy=y2-y1,d=Math.hypot(dx,dy),nx=-dy/d*len,ny=dx/d*len;for(let i=0;i<=n;i++){const t=i/n,x=x1+dx*t,y=y1+dy*t;ctx.moveTo(x-nx,y-ny);ctx.lineTo(x+nx,y+ny)}ctx.stroke()}
+function glowEye(x,y,rx,ry,tilt,blur){ctx.fillStyle='#0a1a0f';ctx.beginPath();ctx.ellipse(x,y,rx+3,ry+3,tilt,0,Math.PI*2);ctx.fill();ctx.save();ctx.shadowColor='#ff1f1f';ctx.shadowBlur=blur;ctx.fillStyle='#ff3b30';ctx.beginPath();ctx.ellipse(x,y,rx,ry,tilt,0,Math.PI*2);ctx.fill();ctx.restore();ctx.fillStyle='#ffd0c4';ctx.beginPath();ctx.arc(x-rx*.3,y-ry*.35,Math.max(1,rx*.18),0,Math.PI*2);ctx.fill();ctx.fillStyle='#3a0006';ctx.beginPath();ctx.arc(x+rx*.1,y+ry*.05,Math.max(1.2,rx*.28),0,Math.PI*2);ctx.fill()}
+// Regular zombie penguin: dark green, lime belly and patches, glowing red eyes, light red veins. No crown or cape.
+// Drawn from its feet and scaled to its obstacle height, so it always stands on the ice and fills its hitbox.
+function drawZombie(o){const x=o.x-worldX+W*.19;if(x+o.w<-30||x>W+30)return;const s=o.h/70,sway=Math.sin(tt*3.2+o.x*.01)*.06;ctx.save();ctx.translate(x+o.w/2,groundY);ctx.scale(s,s);
+ctx.fillStyle='#02081499';ctx.beginPath();ctx.ellipse(0,0,26,5,0,0,Math.PI*2);ctx.fill();
+// dull, ragged feet
+ctx.fillStyle='#a8692b';ctx.beginPath();ctx.ellipse(-11,-3,10,4.5,.12,0,Math.PI*2);ctx.ellipse(10,-3,10,4.5,-.12,0,Math.PI*2);ctx.fill();
+ctx.rotate(sway);
+// arms reaching out toward Pinguin
+ctx.fillStyle='#163d24';ctx.beginPath();ctx.ellipse(-20,-38,6,16,1.15+sway*2,0,Math.PI*2);ctx.fill();ctx.fillStyle='#0f2e1a';ctx.beginPath();ctx.ellipse(16,-34,6,15,.75-sway*2,0,Math.PI*2);ctx.fill();
+// hunched body
+let g=ctx.createLinearGradient(-24,-70,24,0);g.addColorStop(0,'#3d7a43');g.addColorStop(.55,'#21502c');g.addColorStop(1,'#10301b');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(0,-33,23,32,-.05,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#0a2012';ctx.lineWidth=2;ctx.stroke();
+// lime belly with a darker torn patch and stitches
+ctx.fillStyle='#a6e04c';ctx.beginPath();ctx.ellipse(2,-25,14,19,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#74b23a';ctx.beginPath();ctx.moveTo(-6,-30);ctx.lineTo(4,-34);ctx.lineTo(10,-25);ctx.lineTo(3,-17);ctx.lineTo(-7,-20);ctx.closePath();ctx.fill();stitches(-9,-14,9,-11,4,2.5);
+// lime patch on the head
+ctx.fillStyle='#8fcf45';ctx.beginPath();ctx.ellipse(-12,-55,6,4,-.4,0,Math.PI*2);ctx.fill();
+// scraggly hair tufts
+ctx.strokeStyle='#0f2a18';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-4,-64);ctx.lineTo(-8,-73);ctx.moveTo(1,-65);ctx.lineTo(2,-75);ctx.moveTo(6,-64);ctx.lineTo(11,-71);ctx.stroke();
+// heavy brow, sunken mismatched glowing eyes
+ctx.fillStyle='#0d2a17';ctx.beginPath();ctx.moveTo(-16,-55);ctx.lineTo(-1,-49);ctx.lineTo(16,-56);ctx.lineTo(16,-52);ctx.lineTo(-1,-46);ctx.lineTo(-16,-51);ctx.closePath();ctx.fill();
+glowEye(-7,-45,5.5,4.2,.15,10);glowEye(8,-46,4.6,3.6,-.2,9);
+// cracked beak and crooked teeth
+ctx.fillStyle='#c97a2a';ctx.beginPath();ctx.moveTo(-3,-38);ctx.lineTo(11,-35);ctx.lineTo(-2,-31);ctx.closePath();ctx.fill();ctx.strokeStyle='#5a3110';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(3,-37);ctx.lineTo(5,-34);ctx.stroke();
+ctx.strokeStyle='#0a1a0f';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-9,-25);ctx.lineTo(-4,-28);ctx.lineTo(1,-26);ctx.lineTo(6,-28);ctx.lineTo(10,-24);ctx.stroke();stitches(-8,-26,9,-26,4,2.4);
+veins([[-19,-50,-14,-47,-15,-42],[18,-50,13,-48,14,-43],[-21,-22,-16,-19,-18,-13],[20,-25,15,-21,17,-16],[-5,-62,-2,-58,-4,-55]],1.1);
+ctx.restore()}
+// The Zombie King: big, crooked crown, tattered royal cape, glowing red eyes and veins.
+function drawHunter(){const x=['hunter','bossfight','snowball','victory_anim'].includes(state)?hunterX:W+120;ctx.save();if(bossHitTimer>0&&Math.floor(bossHitTimer*24)%2===0)ctx.globalAlpha=.22;if(bossShake){ctx.translate((Math.random()-.5)*bossShake,(Math.random()-.5)*bossShake)}ctx.translate(x,groundY+2);if(state==='victory_anim'){const k=1-Math.max(0,winTimer)/1.15;ctx.rotate(.95*k);ctx.translate(20*k,0)}
+const sway=Math.sin(tt*2.2)*.035;ctx.fillStyle='#02081499';ctx.beginPath();ctx.ellipse(0,-2,60,9,0,0,Math.PI*2);ctx.fill();ctx.rotate(sway);
+// tattered royal cape behind the body
+ctx.fillStyle='#4a0d1d';ctx.beginPath();ctx.moveTo(-36,-118);ctx.lineTo(-62,-8);ctx.lineTo(-48,-18);ctx.lineTo(-40,-2);ctx.lineTo(-28,-16);ctx.lineTo(24,-14);ctx.lineTo(34,-2);ctx.lineTo(44,-18);ctx.lineTo(60,-6);ctx.lineTo(38,-118);ctx.closePath();ctx.fill();ctx.strokeStyle='#22040c';ctx.lineWidth=3;ctx.stroke();
+ctx.fillStyle='#2a0610';for(const [hx,hy] of [[-48,-60],[44,-48],[-40,-30]]){ctx.beginPath();ctx.ellipse(hx,hy,4,6,0,0,Math.PI*2);ctx.fill()}
+// feet
+ctx.fillStyle='#a8692b';ctx.beginPath();ctx.ellipse(-24,-6,20,8,.08,0,Math.PI*2);ctx.ellipse(24,-6,20,8,-.08,0,Math.PI*2);ctx.fill();
+// huge body
+let g=ctx.createLinearGradient(-50,-150,50,0);g.addColorStop(0,'#3f7f45');g.addColorStop(.5,'#22512d');g.addColorStop(1,'#0f2d19');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(0,-72,48,70,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#081a0e';ctx.lineWidth=3;ctx.stroke();
+// fur collar of the cape
+ctx.fillStyle='#e9e2cf';for(let i=0;i<7;i++){ctx.beginPath();ctx.arc(-33+i*11,-112+Math.abs(i-3)*2.5,7,0,Math.PI*2);ctx.fill()}ctx.fillStyle='#1b1b1b';for(const sx of [-22,0,22]){ctx.beginPath();ctx.ellipse(sx,-110,1.6,3,0,0,Math.PI*2);ctx.fill()}
+// lime belly, patches, scar with stitches
+ctx.fillStyle='#a6e04c';ctx.beginPath();ctx.ellipse(2,-58,30,45,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#74b23a';ctx.beginPath();ctx.moveTo(-18,-70);ctx.lineTo(-2,-78);ctx.lineTo(8,-64);ctx.lineTo(-4,-50);ctx.lineTo(-20,-56);ctx.closePath();ctx.fill();ctx.beginPath();ctx.ellipse(16,-32,8,6,.4,0,Math.PI*2);ctx.fill();stitches(-16,-36,18,-48,6,3.5);
+ctx.fillStyle='#8fcf45';ctx.beginPath();ctx.ellipse(-30,-118,8,5,-.5,0,Math.PI*2);ctx.fill();
+// arms: one reaching for Pinguin, one clawing
+ctx.fillStyle='#163d24';ctx.beginPath();ctx.ellipse(-46,-86,12,34,1.0+Math.sin(tt*2.6)*.12,0,Math.PI*2);ctx.fill();ctx.fillStyle='#0f2e1a';ctx.beginPath();ctx.ellipse(44,-70,12,32,-.25,0,Math.PI*2);ctx.fill();
+// heavy angry brow and glowing eyes
+ctx.fillStyle='#0b2614';ctx.beginPath();ctx.moveTo(-34,-124);ctx.lineTo(-2,-106);ctx.lineTo(34,-126);ctx.lineTo(34,-117);ctx.lineTo(-2,-99);ctx.lineTo(-34,-115);ctx.closePath();ctx.fill();
+glowEye(-15,-100,10,7,.25,18);glowEye(17,-101,10,7,-.25,18);
+// cracked beak over a jagged mouth
+ctx.strokeStyle='#0a1a0f';ctx.lineWidth=4.5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-24,-64);ctx.lineTo(-14,-72);ctx.lineTo(-4,-68);ctx.lineTo(6,-73);ctx.lineTo(16,-69);ctx.lineTo(25,-62);ctx.stroke();stitches(-20,-68,21,-68,7,4);
+ctx.fillStyle='#c97a2a';ctx.beginPath();ctx.moveTo(-9,-92);ctx.lineTo(18,-86);ctx.lineTo(-8,-79);ctx.closePath();ctx.fill();ctx.strokeStyle='#5a3110';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(4,-90);ctx.lineTo(7,-85);ctx.lineTo(5,-82);ctx.stroke();
+veins([[-40,-104,-31,-98,-34,-90,-29,-86],[39,-106,31,-99,34,-92],[-42,-60,-33,-56,-36,-48],[40,-56,32,-50,35,-42],[-6,-136,-2,-128,-6,-122],[-26,-24,-18,-20,-21,-14]],1.6);
+// tarnished, crooked crown with red gems
+ctx.save();ctx.translate(2,-138);ctx.rotate(-.14);ctx.fillStyle='#d4a93a';ctx.beginPath();ctx.moveTo(-30,12);ctx.lineTo(-27,-16);ctx.lineTo(-15,-2);ctx.lineTo(-5,-26);ctx.lineTo(6,-3);ctx.lineTo(16,-20);ctx.lineTo(22,-4);ctx.lineTo(33,-12);ctx.lineTo(29,12);ctx.closePath();ctx.fill();ctx.strokeStyle='#7c5a14';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='#9c7a24';ctx.fillRect(-29,4,58,7);ctx.strokeStyle='#5f4410';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-10,11);ctx.lineTo(-7,2);ctx.lineTo(-11,-6);ctx.stroke();ctx.fillStyle='#c4141e';ctx.shadowColor='#ff2929';ctx.shadowBlur=8;for(const [gx,gy] of [[-15,6],[3,6],[19,6],[-5,-14]]){ctx.beginPath();ctx.arc(gx,gy,3.2,0,Math.PI*2);ctx.fill()}ctx.restore();
+ctx.restore()}
+function drawSnowball(){for(const sh of shots){snowballX=sh.x;snowballY=sh.y;drawOneShot()}}
+function drawOneShot(){ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#8ccfe8';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(snowballX-13,snowballY-13,26,26,5);ctx.fill();ctx.stroke();ctx.fillStyle='#dff7ff';ctx.beginPath();ctx.moveTo(snowballX-8,snowballY-6);ctx.lineTo(snowballX-2,snowballY-11);ctx.lineTo(snowballX+6,snowballY-5);ctx.lineTo(snowballX+9,snowballY+2);ctx.lineTo(snowballX+1,snowballY+8);ctx.lineTo(snowballX-7,snowballY+4);ctx.closePath();ctx.fill();ctx.restore()}
+function draw(){drawBackground();for(const o of obstacles)drawZombie(o);if(player)drawPenguin();for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.35);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}drawSnowball();if(state==='hunter'||state==='bossfight'||state==='snowball'||state==='victory_anim')drawHunter();if(['hunter','bossfight','snowball'].includes(state)){ctx.fillStyle='#e9fbff';ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText('KING HEALTH: '+(3-bossHits)+' / 3',W<540?W/2:W*.72,W<540?165:38);}if(state==='playing'){ctx.fillStyle='#17425b';ctx.font='700 13px system-ui';ctx.textAlign='right';ctx.fillText(level===2?'THE KING IS NEAR!':'KEEP HOPPING!',W-18,H-20)}drawBurst()}
+function loop(t){const dt=Math.min(.032,Math.max(0,(t-last)/1000||0));last=t;tt+=dt;update(dt);draw();requestAnimationFrame(loop)}
 // Initial art behind title screen
 resetLevel(0,true);requestAnimationFrame(loop);
 })();
