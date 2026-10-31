@@ -14,15 +14,18 @@ HOW TO PLAY (ALL GAMES)
 
 THE GAMES
 ---------
-1. Pinguin: Arctic Jump  (index.html)
+1. Pinguin: Arctic Jump
+   Play: https://nldg-games.github.io/pinguin/
    Hop over ice blocks across the Arctic, then stop the hunter
    with snowballs. WHACK!!!
 
-2. Pinguin Zombies  (pinguin-zombies.html)
+2. Pinguin Zombies
+   Play: https://nldg-games.github.io/pinguin/pinguin-zombies.html
    Leap over zombie penguins in the Ice Cavern, then defeat the
    Zombie King with ice blocks. SHMACK!!!
 
-3. Pinguin Pirates  (pinguin-pirates.html)
+3. Pinguin Pirates
+   Play: https://nldg-games.github.io/pinguin/pinguin-pirates.html
    Jump over pirate penguins on the deck of a pirate ship, then
    fight the giant Kraken with barrels. WHAM!!!
 
@@ -37,3 +40,4 @@ LATEST UPDATES (October 2026)
   during a boss fight.
 
 Created by NLDG Games.
+Source: https://github.com/nldg-games/pinguin
